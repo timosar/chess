@@ -134,6 +134,7 @@
     font-size:13px;
   }
   .row .label{color:var(--muted);}
+  .row-right{display:flex;align-items:center;gap:8px;}
   select,button,input[type=text]{
     font:inherit;
     font-size:13px;
@@ -193,7 +194,10 @@
 <div id="panel">
   <div class="row">
     <span class="label">room</span>
-    <span id="room-val">—</span>
+    <div class="row-right">
+      <span id="room-val">—</span>
+      <button id="share-btn" style="display:none;font-size:11px;padding:3px 8px;">copy link</button>
+    </div>
   </div>
   <div class="row">
     <span class="label">you play</span>
@@ -255,6 +259,7 @@
   const chatInput = document.getElementById("chat-input");
   const themeSelect = document.getElementById("theme");
   const resignBtn = document.getElementById("resign");
+  const shareBtn = document.getElementById("share-btn");
   const ghost = document.getElementById("drag-ghost");
 
   let myColor = null;
@@ -615,7 +620,7 @@
 
   function logChat(from, text) {
     const line = document.createElement("div");
-    line.innerHTML = `<span class="from">${from}</span>${escapeHtml(text)}`;
+    line.innerHTML = `<span class="from">${escapeHtml(from)}</span>${escapeHtml(text)}`;
     chatLogEl.appendChild(line);
     chatLogEl.scrollTop = chatLogEl.scrollHeight;
   }
@@ -636,6 +641,7 @@
           myColor = data.color;
           colorVal.textContent = data.color;
           roomVal.textContent = data.room || room || "(auto)";
+          shareBtn.style.display = "inline-block";
           break;
         case "state":
           fen = data.fen;
@@ -671,6 +677,16 @@
   });
 
   resignBtn.addEventListener("click", () => send({ type: "resign" }));
+
+  shareBtn.addEventListener("click", () => {
+    const r = roomVal.textContent;
+    if (!r || r === "—") return;
+    const shareUrl = `${location.origin}/?room=${encodeURIComponent(r)}`;
+    navigator.clipboard.writeText(shareUrl).then(() => {
+      shareBtn.textContent = "copied!";
+      setTimeout(() => { shareBtn.textContent = "copy link"; }, 1500);
+    });
+  });
 
   render();
   connect();
