@@ -4,7 +4,7 @@
 require 'websocket-client-simple'
 require 'json'
 
-HOST = ENV['CHESS_HOST'] || 'ws://localhost:7070'
+HOST = 'wss://chess.timosarkar.xyz'
 ROOM = ARGV[0] || ''
 URL  = "#{HOST}/ws/#{ROOM}"
 
