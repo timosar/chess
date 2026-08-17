@@ -1,0 +1,680 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>chess.timosarkar.xyz</title>
+<style>
+  :root{
+    --bg:#ffffff;
+    --ink:#111111;
+    --muted:#8a8a8a;
+    --line:#e6e6e6;
+    --light:#eeeeee;
+    --dark:#b7b7b7;
+    --accent:#111111;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0;
+    height:100%;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  }
+  body{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    padding:32px 16px 64px;
+  }
+  header{
+    width:100%;
+    max-width:560px;
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    margin-bottom:20px;
+  }
+  h1{
+    font-size:15px;
+    font-weight:600;
+    letter-spacing:0.02em;
+    margin:0;
+  }
+  #status{
+    font-size:12px;
+    color:var(--muted);
+  }
+  #board-wrap{
+    position:relative;
+    width:min(92vw,480px);
+    aspect-ratio:1/1;
+  }
+  #board{
+    width:100%;
+    height:100%;
+    display:grid;
+    grid-template-columns:repeat(8,1fr);
+    grid-template-rows:repeat(8,1fr);
+    border:1px solid var(--line);
+  }
+  .sq{
+    position:relative;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    user-select:none;
+  }
+  .sq.light{background:var(--light);}
+  .sq.dark{background:var(--dark);}
+  .sq.selected::after{
+    content:"";
+    position:absolute;
+    inset:0;
+    background:var(--accent);
+    opacity:0.18;
+  }
+  .sq.move-target::after{
+    content:"";
+    position:absolute;
+    width:24%;
+    height:24%;
+    border-radius:50%;
+    background:var(--accent);
+    opacity:0.28;
+  }
+  .sq.last-move{
+    box-shadow:inset 0 0 0 2px rgba(17,17,17,0.35);
+  }
+  .piece{
+    width:82%;
+    height:82%;
+    background-size:contain;
+    background-repeat:no-repeat;
+    background-position:center;
+    cursor:grab;
+    pointer-events:none;
+  }
+  .sq.has-piece{cursor:pointer;}
+  .piece.dragging{
+    opacity:0.35;
+  }
+  #drag-ghost{
+    position:fixed;
+    width:56px;
+    height:56px;
+    background-size:contain;
+    background-repeat:no-repeat;
+    background-position:center;
+    pointer-events:none;
+    display:none;
+    z-index:50;
+    transform:translate(-50%,-50%);
+  }
+  .coords{
+    position:absolute;
+    inset:0;
+    display:grid;
+    grid-template-columns:repeat(8,1fr);
+    grid-template-rows:repeat(8,1fr);
+    pointer-events:none;
+  }
+  #panel{
+    width:min(92vw,480px);
+    margin-top:20px;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+  }
+  .row{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    font-size:13px;
+  }
+  .row .label{color:var(--muted);}
+  select,button,input[type=text]{
+    font:inherit;
+    font-size:13px;
+    border:1px solid var(--line);
+    background:var(--bg);
+    color:var(--ink);
+    border-radius:4px;
+    padding:6px 10px;
+  }
+  button{cursor:pointer;}
+  button:hover{background:var(--light);}
+  #moves{
+    font-size:12px;
+    color:var(--muted);
+    line-height:1.6;
+    max-height:60px;
+    overflow-y:auto;
+    border-top:1px solid var(--line);
+    padding-top:8px;
+  }
+  #chat-log{
+    font-size:12px;
+    line-height:1.6;
+    max-height:120px;
+    overflow-y:auto;
+    border-top:1px solid var(--line);
+    padding-top:8px;
+  }
+  #chat-log .from{color:var(--muted);margin-right:6px;}
+  #chat-form{
+    display:flex;
+    gap:8px;
+  }
+  #chat-form input{flex:1;}
+  #error{
+    font-size:12px;
+    color:#b3261e;
+    min-height:14px;
+  }
+  @media (prefers-reduced-motion:no-preference){
+    .sq.selected::after,.sq.move-target::after{transition:opacity 0.12s ease;}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>chess</h1>
+  <div id="status">connecting…</div>
+</header>
+
+<div id="board-wrap">
+  <div id="board"></div>
+</div>
+<div id="drag-ghost"></div>
+
+<div id="panel">
+  <div class="row">
+    <span class="label">room</span>
+    <span id="room-val">—</span>
+  </div>
+  <div class="row">
+    <span class="label">you play</span>
+    <span id="color-val">—</span>
+  </div>
+  <div class="row">
+    <span class="label">turn</span>
+    <span id="turn-val">—</span>
+  </div>
+  <div class="row">
+    <span class="label">board theme</span>
+    <select id="theme">
+      <option value="classic">classic</option>
+      <option value="slate">slate</option>
+      <option value="clay">clay</option>
+      <option value="mint">mint</option>
+    </select>
+  </div>
+  <div class="row">
+    <button id="resign">resign</button>
+  </div>
+  <div id="error"></div>
+  <div id="moves"></div>
+  <div id="chat-log"></div>
+  <form id="chat-form">
+    <input type="text" id="chat-input" placeholder="message" autocomplete="off">
+    <button type="submit">send</button>
+  </form>
+</div>
+
+<script>
+(() => {
+  const THEMES = {
+    classic: { light:"#eeeeee", dark:"#b7b7b7" },
+    slate:   { light:"#eef1f3", dark:"#8a9aa8" },
+    clay:    { light:"#f1e7dd", dark:"#c08a5f" },
+    mint:    { light:"#eaf5ef", dark:"#7fb99a" },
+  };
+
+  const PIECE_CODE = { p:"bP", n:"bN", b:"bB", r:"bR", q:"bQ", k:"bK",
+                        P:"wP", N:"wN", B:"wB", R:"wR", Q:"wQ", K:"wK" };
+  const pieceUrl = code =>
+    `https://cdn.jsdelivr.net/gh/lichess-org/lila@master/public/piece/cburnett/${code}.svg`;
+
+  const params = new URLSearchParams(location.search);
+  const room = params.get("room") || location.pathname.split("/").filter(Boolean).pop() || "";
+  const host = params.get("host") || "wss://chess.timosarkar.xyz";
+  const wsUrl = `${host}/ws/${room}`;
+
+  const boardEl = document.getElementById("board");
+  const statusEl = document.getElementById("status");
+  const roomVal = document.getElementById("room-val");
+  const colorVal = document.getElementById("color-val");
+  const turnVal = document.getElementById("turn-val");
+  const errorEl = document.getElementById("error");
+  const movesEl = document.getElementById("moves");
+  const chatLogEl = document.getElementById("chat-log");
+  const chatForm = document.getElementById("chat-form");
+  const chatInput = document.getElementById("chat-input");
+  const themeSelect = document.getElementById("theme");
+  const resignBtn = document.getElementById("resign");
+  const ghost = document.getElementById("drag-ghost");
+
+  let myColor = null;
+  let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+  let history = [];
+  let selected = null;   // square string, e.g. "e2"
+  let lastMove = null;   // [from, to]
+  let ws = null;
+
+  function applyTheme(name) {
+    const t = THEMES[name] || THEMES.classic;
+    document.documentElement.style.setProperty("--light", t.light);
+    document.documentElement.style.setProperty("--dark", t.dark);
+  }
+  themeSelect.addEventListener("change", () => applyTheme(themeSelect.value));
+  applyTheme("clay");
+
+  function squareName(file, rank) {
+    return "abcdefgh"[file] + (rank + 1);
+  }
+
+  function boardSquares() {
+    // returns array of {file, rank, name} in the order to render,
+    // flipped if playing black
+    const flip = myColor === "b";
+    const squares = [];
+    for (let row = 0; row < 8; row++) {
+      for (let col = 0; col < 8; col++) {
+        const rank = flip ? row : 7 - row;
+        const file = flip ? 7 - col : col;
+        squares.push({ file, rank, name: squareName(file, rank) });
+      }
+    }
+    return squares;
+  }
+
+  function fenToMap(f) {
+    const map = {};
+    const rows = f.split(" ")[0].split("/");
+    rows.forEach((row, i) => {
+      const rank = 8 - i - 1;
+      let file = 0;
+      for (const c of row) {
+        if (/\d/.test(c)) { file += parseInt(c, 10); continue; }
+        map[squareName(file, rank)] = c;
+        file += 1;
+      }
+    });
+    return map;
+  }
+
+  // ---------- minimal legal-move engine ----------
+  const FILES = "abcdefgh";
+  const sqRF = name => [parseInt(name[1], 10) - 1, FILES.indexOf(name[0])]; // [rank, file]
+  const rfSq = (rank, file) => FILES[file] + (rank + 1);
+  const inBounds = (r, f) => r >= 0 && r <= 7 && f >= 0 && f <= 7;
+  const colorOf = p => (p === p.toUpperCase() ? "w" : "b");
+
+  function parseFen(f) {
+    const [placement, turn, castling, ep] = f.split(" ");
+    const rows = placement.split("/");
+    const board = Array.from({ length: 8 }, () => Array(8).fill(null));
+    rows.forEach((row, i) => {
+      const rank = 7 - i;
+      let file = 0;
+      for (const c of row) {
+        if (/\d/.test(c)) { file += parseInt(c, 10); continue; }
+        board[rank][file] = c;
+        file += 1;
+      }
+    });
+    return { board, turn, castling: castling || "-", ep: ep || "-" };
+  }
+
+  const SLIDE = {
+    b: [[1, 1], [1, -1], [-1, 1], [-1, -1]],
+    r: [[1, 0], [-1, 0], [0, 1], [0, -1]],
+  };
+  const KNIGHT_OFFSETS = [[1, 2], [2, 1], [-1, 2], [-2, 1], [1, -2], [2, -1], [-1, -2], [-2, -1]];
+  const KING_OFFSETS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+
+  function isAttacked(board, rank, file, byColor) {
+    // pawns
+    const pawnRankDir = byColor === "w" ? -1 : 1; // attacker's pawn sits behind the square, opposite of its push dir
+    for (const df of [-1, 1]) {
+      const r = rank + pawnRankDir, fl = file + df;
+      if (inBounds(r, fl)) {
+        const p = board[r][fl];
+        if (p && p.toLowerCase() === "p" && colorOf(p) === byColor) return true;
+      }
+    }
+    // knights
+    for (const [dr, df] of KNIGHT_OFFSETS) {
+      const r = rank + dr, fl = file + df;
+      if (inBounds(r, fl)) {
+        const p = board[r][fl];
+        if (p && p.toLowerCase() === "n" && colorOf(p) === byColor) return true;
+      }
+    }
+    // king
+    for (const [dr, df] of KING_OFFSETS) {
+      const r = rank + dr, fl = file + df;
+      if (inBounds(r, fl)) {
+        const p = board[r][fl];
+        if (p && p.toLowerCase() === "k" && colorOf(p) === byColor) return true;
+      }
+    }
+    // sliding: bishop/queen diagonals, rook/queen orthogonals
+    for (const [dirs, kinds] of [[SLIDE.b, ["b", "q"]], [SLIDE.r, ["r", "q"]]]) {
+      for (const [dr, df] of dirs) {
+        let r = rank + dr, fl = file + df;
+        while (inBounds(r, fl)) {
+          const p = board[r][fl];
+          if (p) {
+            if (colorOf(p) === byColor && kinds.includes(p.toLowerCase())) return true;
+            break;
+          }
+          r += dr; fl += df;
+        }
+      }
+    }
+    return false;
+  }
+
+  function findKing(board, color) {
+    const target = color === "w" ? "K" : "k";
+    for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) if (board[r][f] === target) return [r, f];
+    return null;
+  }
+
+  function cloneBoard(board) { return board.map(row => row.slice()); }
+
+  function pseudoMovesFrom(state, rank, file) {
+    const { board, turn, castling, ep } = state;
+    const piece = board[rank][file];
+    if (!piece || colorOf(piece) !== turn) return [];
+    const kind = piece.toLowerCase();
+    const moves = []; // {to:[r,f], promo?, castle?, enpassant?}
+
+    if (kind === "p") {
+      const dir = turn === "w" ? 1 : -1;
+      const startRank = turn === "w" ? 1 : 6;
+      const promoRank = turn === "w" ? 7 : 0;
+      const r1 = rank + dir;
+      if (inBounds(r1, file) && !board[r1][file]) {
+        moves.push({ to: [r1, file], promo: r1 === promoRank });
+        const r2 = rank + dir * 2;
+        if (rank === startRank && !board[r2][file]) moves.push({ to: [r2, file], promo: false });
+      }
+      for (const df of [-1, 1]) {
+        const fl = file + df;
+        if (!inBounds(r1, fl)) continue;
+        const target = board[r1][fl];
+        if (target && colorOf(target) !== turn) {
+          moves.push({ to: [r1, fl], promo: r1 === promoRank });
+        } else if (!target && ep !== "-" && rfSq(r1, fl) === ep) {
+          moves.push({ to: [r1, fl], promo: false, enpassant: true });
+        }
+      }
+    } else if (kind === "n") {
+      for (const [dr, df] of KNIGHT_OFFSETS) {
+        const r = rank + dr, fl = file + df;
+        if (!inBounds(r, fl)) continue;
+        const target = board[r][fl];
+        if (!target || colorOf(target) !== turn) moves.push({ to: [r, fl] });
+      }
+    } else if (kind === "k") {
+      for (const [dr, df] of KING_OFFSETS) {
+        const r = rank + dr, fl = file + df;
+        if (!inBounds(r, fl)) continue;
+        const target = board[r][fl];
+        if (!target || colorOf(target) !== turn) moves.push({ to: [r, fl] });
+      }
+      // castling
+      const opp = turn === "w" ? "b" : "w";
+      const homeRank = turn === "w" ? 0 : 7;
+      if (rank === homeRank && file === 4 && !isAttacked(board, rank, file, opp)) {
+        const kSide = turn === "w" ? "K" : "k";
+        const qSide = turn === "w" ? "Q" : "q";
+        if (castling.includes(kSide) && !board[homeRank][5] && !board[homeRank][6]
+            && !isAttacked(board, homeRank, 5, opp) && !isAttacked(board, homeRank, 6, opp)) {
+          moves.push({ to: [homeRank, 6], castle: "k" });
+        }
+        if (castling.includes(qSide) && !board[homeRank][1] && !board[homeRank][2] && !board[homeRank][3]
+            && !isAttacked(board, homeRank, 3, opp) && !isAttacked(board, homeRank, 2, opp)) {
+          moves.push({ to: [homeRank, 2], castle: "q" });
+        }
+      }
+    } else {
+      const dirs = kind === "b" ? SLIDE.b : kind === "r" ? SLIDE.r : [...SLIDE.b, ...SLIDE.r];
+      for (const [dr, df] of dirs) {
+        let r = rank + dr, fl = file + df;
+        while (inBounds(r, fl)) {
+          const target = board[r][fl];
+          if (!target) { moves.push({ to: [r, fl] }); }
+          else { if (colorOf(target) !== turn) moves.push({ to: [r, fl] }); break; }
+          r += dr; fl += df;
+        }
+      }
+    }
+    return moves;
+  }
+
+  function applyMove(state, fromR, fromF, move) {
+    const board = cloneBoard(state.board);
+    const piece = board[fromR][fromF];
+    const [toR, toF] = move.to;
+    board[fromR][fromF] = null;
+    if (move.enpassant) board[fromR][toF] = null; // captured pawn sits beside the mover
+    board[toR][toF] = move.promo ? (colorOf(piece) === "w" ? "Q" : "q") : piece;
+    if (move.castle === "k") {
+      const homeRank = fromR;
+      board[homeRank][5] = board[homeRank][7];
+      board[homeRank][7] = null;
+    } else if (move.castle === "q") {
+      const homeRank = fromR;
+      board[homeRank][3] = board[homeRank][0];
+      board[homeRank][0] = null;
+    }
+    return board;
+  }
+
+  function legalMovesFrom(fenStr, squareName) {
+    const state = parseFen(fenStr);
+    const [rank, file] = sqRF(squareName);
+    const piece = state.board[rank][file];
+    if (!piece || colorOf(piece) !== state.turn) return [];
+    const opp = state.turn === "w" ? "b" : "w";
+    const pseudo = pseudoMovesFrom(state, rank, file);
+    const legal = [];
+    for (const mv of pseudo) {
+      const nextBoard = applyMove(state, rank, file, mv);
+      const kingPos = findKing(nextBoard, state.turn);
+      if (kingPos && isAttacked(nextBoard, kingPos[0], kingPos[1], opp)) continue;
+      legal.push(rfSq(mv.to[0], mv.to[1]));
+    }
+    return legal;
+  }
+  // ---------- end engine ----------
+
+  let legalTargets = [];
+
+  function render() {
+    boardEl.innerHTML = "";
+    const map = fenToMap(fen);
+    boardSquares().forEach(({ file, rank, name }) => {
+      const sq = document.createElement("div");
+      const isLight = (file + rank) % 2 === 1;
+      sq.className = "sq " + (isLight ? "light" : "dark");
+      sq.dataset.square = name;
+
+      if (selected === name) sq.classList.add("selected");
+      if (lastMove && (lastMove[0] === name || lastMove[1] === name)) sq.classList.add("last-move");
+
+      const piece = map[name];
+      if (piece) {
+        sq.classList.add("has-piece");
+        const p = document.createElement("div");
+        p.className = "piece";
+        p.style.backgroundImage = `url(${pieceUrl(PIECE_CODE[piece])})`;
+        p.draggable = false;
+        sq.appendChild(p);
+      }
+
+      sq.addEventListener("click", () => onSquareClick(name, !!piece));
+      sq.addEventListener("pointerdown", (e) => onPointerDown(e, name, !!piece));
+
+      boardEl.appendChild(sq);
+    });
+
+    if (selected) {
+      // only squares the engine confirms as legal get marked
+      document.querySelectorAll(".sq").forEach(el => {
+        if (legalTargets.includes(el.dataset.square)) el.classList.add("move-target");
+      });
+    }
+  }
+
+  function selectSquare(name) {
+    selected = name;
+    legalTargets = legalMovesFrom(fen, name);
+  }
+  function clearSelection() {
+    selected = null;
+    legalTargets = [];
+  }
+
+  function onSquareClick(name, hasPiece) {
+    if (!selected) {
+      if (hasPiece) selectSquare(name);
+      render();
+      return;
+    }
+    if (selected === name) {
+      clearSelection();
+      render();
+      return;
+    }
+    if (legalTargets.includes(name)) {
+      attemptMove(selected, name);
+      clearSelection();
+    } else if (hasPiece) {
+      selectSquare(name); // switch selection to the newly clicked piece
+      render();
+    } else {
+      clearSelection();
+      render();
+    }
+  }
+
+  // --- drag to move ---
+  let dragFrom = null;
+  function onPointerDown(e, name, hasPiece) {
+    if (!hasPiece) return;
+    dragFrom = name;
+    selectSquare(name);
+    render();
+    const img = document.querySelector(`.sq[data-square="${name}"] .piece`);
+    if (img) ghost.style.backgroundImage = img.style.backgroundImage;
+    ghost.style.display = "block";
+    moveGhost(e);
+    window.addEventListener("pointermove", moveGhost);
+    window.addEventListener("pointerup", onPointerUp, { once: true });
+  }
+  function moveGhost(e) {
+    ghost.style.left = e.clientX + "px";
+    ghost.style.top = e.clientY + "px";
+  }
+  function onPointerUp(e) {
+    window.removeEventListener("pointermove", moveGhost);
+    ghost.style.display = "none";
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const target = el && el.closest(".sq");
+    if (target && dragFrom && target.dataset.square !== dragFrom && legalTargets.includes(target.dataset.square)) {
+      attemptMove(dragFrom, target.dataset.square);
+    }
+    dragFrom = null;
+    clearSelection();
+    render();
+  }
+
+  function attemptMove(from, to) {
+    let promo = null;
+    const map = fenToMap(fen);
+    const piece = map[from];
+    if (piece && piece.toLowerCase() === "p" && (to.endsWith("8") || to.endsWith("1"))) {
+      promo = (prompt("Promote to (q, r, b, n)", "q") || "q").toLowerCase();
+      if (!"qrbn".includes(promo)) promo = "q";
+    }
+    const payload = { type: "move", from, to };
+    if (promo) payload.promo = promo.toUpperCase();
+    send(payload);
+  }
+
+  function send(obj) {
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+  }
+
+  function logChat(from, text) {
+    const line = document.createElement("div");
+    line.innerHTML = `<span class="from">${from}</span>${escapeHtml(text)}`;
+    chatLogEl.appendChild(line);
+    chatLogEl.scrollTop = chatLogEl.scrollHeight;
+  }
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+  }
+
+  function connect() {
+    ws = new WebSocket(wsUrl);
+    ws.onopen = () => { statusEl.textContent = "connected"; };
+    ws.onclose = () => { statusEl.textContent = "disconnected"; };
+    ws.onerror = () => { statusEl.textContent = "connection error"; };
+    ws.onmessage = (ev) => {
+      let data;
+      try { data = JSON.parse(ev.data); } catch { return; }
+      switch (data.type) {
+        case "joined":
+          myColor = data.color;
+          colorVal.textContent = data.color;
+          roomVal.textContent = data.room || room || "(auto)";
+          break;
+        case "state":
+          fen = data.fen;
+          selected = null;
+          legalTargets = [];
+          turnVal.textContent = data.turn || "—";
+          statusEl.textContent = data.status || "connected";
+          history = data.history || [];
+          if (history.length) {
+            const last = history[history.length - 1];
+            if (last && last.length >= 4) lastMove = [last.slice(0,2), last.slice(2,4)];
+          }
+          movesEl.textContent = history.slice(-16).join(" ");
+          break;
+        case "error":
+          errorEl.textContent = data.message || "error";
+          setTimeout(() => { errorEl.textContent = ""; }, 4000);
+          break;
+        case "chat":
+          logChat(data.role || "?", data.text || "");
+          break;
+      }
+      render();
+    };
+  }
+
+  chatForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const text = chatInput.value.trim();
+    if (!text) return;
+    send({ type: "chat", text });
+    chatInput.value = "";
+  });
+
+  resignBtn.addEventListener("click", () => send({ type: "resign" }));
+
+  render();
+  connect();
+})();
+</script>
+</body>
+</html>
